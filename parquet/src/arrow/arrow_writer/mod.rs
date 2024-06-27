@@ -185,7 +185,21 @@ impl<W: Write + Send> ArrowWriter<W> {
         self.writer.flushed_row_groups()
     }
 
-    /// Returns the estimated length in bytes of the current in progress row group
+    /// Returns the estimated memory usage of the current in progress row group.
+    ///
+    /// This includes the current encoded size of written bytes, as well as
+    /// the size of the unencoded data not yet flushed.
+    pub fn memory_size(&self) -> usize {
+        match &self.in_progress {
+            Some(in_progress) => in_progress.writers.iter().map(|x| x.memory_size()).sum(),
+            None => 0,
+        }
+    }
+
+    /// Returns the estimated length in encoded bytes of the current in progress row group.
+    ///
+    /// This includes an estimate of any data that has not yet been flushed to a page,
+    /// based on it's anticipated encoded size.
     pub fn in_progress_size(&self) -> usize {
         match &self.in_progress {
             Some(in_progress) => in_progress
@@ -600,7 +614,21 @@ impl ArrowColumnWriter {
         Ok(ArrowColumnChunk { data, close })
     }
 
-    /// Returns the estimated total bytes for this column writer
+    /// Returns the estimated total memory usage.
+    ///
+    /// Unlike [`Self::get_estimated_total_bytes`] this is an estimate
+    /// of the current memory usage and not it's anticipated encoded size.
+    pub fn memory_size(&self) -> usize {
+        match &self.writer {
+            ArrowColumnWriterImpl::ByteArray(c) => c.memory_size(),
+            ArrowColumnWriterImpl::Column(c) => c.memory_size(),
+        }
+    }
+
+    /// Returns the estimated total encoded bytes for this column writer.
+    ///
+    /// This includes an estimate of any data that has not yet been flushed to a page,
+    /// based on it's anticipated encoded size.
     pub fn get_estimated_total_bytes(&self) -> usize {
         match &self.writer {
             ArrowColumnWriterImpl::ByteArray(c) => c.get_estimated_total_bytes() as _,
@@ -2798,6 +2826,7 @@ mod tests {
         // starts empty
         assert_eq!(writer.in_progress_size(), 0);
         assert_eq!(writer.in_progress_rows(), 0);
+        assert_eq!(writer.memory_size(), 0);
         assert_eq!(writer.bytes_written(), 4); // Initial header
         writer.write(&batch).unwrap();
 
@@ -2805,17 +2834,20 @@ mod tests {
         let initial_size = writer.in_progress_size();
         assert!(initial_size > 0);
         assert_eq!(writer.in_progress_rows(), 5);
+        let initial_memory = writer.memory_size();
+        assert!(initial_memory > 0);
 
         // updated on second write
         writer.write(&batch).unwrap();
         assert!(writer.in_progress_size() > initial_size);
         assert_eq!(writer.in_progress_rows(), 10);
+        assert!(writer.memory_size() > initial_memory);
 
         // in progress tracking is cleared, but the overall data written is updated
         let pre_flush_bytes_written = writer.bytes_written();
         writer.flush().unwrap();
         assert_eq!(writer.in_progress_size(), 0);
-        assert_eq!(writer.in_progress_rows(), 0);
+        assert_eq!(writer.memory_size(), 0);
         assert!(writer.bytes_written() > pre_flush_bytes_written);
 
         writer.close().unwrap();
