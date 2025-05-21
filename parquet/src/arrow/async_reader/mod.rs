@@ -765,9 +765,8 @@ where
                             self.batch_size,
                         )
                         .await
-                        .map_err(|err| {
+                        .inspect_err(|_| {
                             self.state = StreamState::Error;
-                            err
                         })?;
                     self.reader = Some(reader_factory);
 
@@ -1070,7 +1069,7 @@ mod tests {
     };
     use arrow_schema::{DataType, Field, Schema};
     use futures::{StreamExt, TryStreamExt};
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     use tempfile::tempfile;
@@ -1400,7 +1399,7 @@ mod tests {
 
         assert_eq!(metadata.num_row_groups(), 1);
 
-        let mut rand = thread_rng();
+        let mut rand = rng();
 
         for _ in 0..100 {
             let mut expected_rows = 0;
@@ -1409,7 +1408,7 @@ mod tests {
             let mut selectors = vec![];
 
             while total_rows < 7300 {
-                let row_count: usize = rand.gen_range(1..100);
+                let row_count: usize = rand.random_range(1..100);
 
                 let row_count = row_count.min(7300 - total_rows);
 
@@ -1436,7 +1435,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            let col_idx: usize = rand.gen_range(0..13);
+            let col_idx: usize = rand.random_range(0..13);
             let mask = ProjectionMask::leaves(builder.parquet_schema(), vec![col_idx]);
 
             let stream = builder
@@ -1467,7 +1466,7 @@ mod tests {
 
         assert_eq!(metadata.num_row_groups(), 1);
 
-        let mut rand = thread_rng();
+        let mut rand = rng();
 
         let mut expected_rows = 0;
         let mut total_rows = 0;
@@ -1480,7 +1479,7 @@ mod tests {
         });
 
         while total_rows < 7300 {
-            let row_count: usize = rand.gen_range(1..100);
+            let row_count: usize = rand.random_range(1..100);
 
             let row_count = row_count.min(7300 - total_rows);
 
@@ -1507,7 +1506,7 @@ mod tests {
             .await
             .unwrap();
 
-        let col_idx: usize = rand.gen_range(0..13);
+        let col_idx: usize = rand.random_range(0..13);
         let mask = ProjectionMask::leaves(builder.parquet_schema(), vec![col_idx]);
 
         let stream = builder
